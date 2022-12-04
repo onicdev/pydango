@@ -1,0 +1,27 @@
+[build-system]
+requires = [
+    "hatchling",
+    "motor>=2.5.1",
+    "pydantic>=1.9.0",
+    "ujson>=5.2.0"
+    ]
+build-backend = "hatchling.build"
+
+[project]
+name = "pydango"
+version = "0.0.1"
+authors = [
+  { name="Vitaliy Grusha", email="vit.grusha@gmail.com" },
+]
+description = "Use Pydantic as MongoDB ORM."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = ""
+"Bug Tracker" = ""
