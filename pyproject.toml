@@ -1,10 +1,5 @@
 [build-system]
-requires = [
-    "hatchling",
-    "motor>=2.5.1",
-    "pydantic>=1.9.0",
-    "ujson>=5.2.0"
-    ]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
@@ -20,6 +15,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "motor>=2.5.1",
+    "pydantic>=1.9.0",
+    "ujson>=5.2.0"
 ]
 
 [project.urls]
