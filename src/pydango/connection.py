@@ -3,6 +3,8 @@ from functools import cached_property
 import pymongo
 import motor.motor_asyncio
 
+class UndefinedConnection:
+    pass
 
 class BaseConnection:
     __slots__ = ["database_name"]

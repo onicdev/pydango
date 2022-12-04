@@ -12,7 +12,7 @@ from pydantic import BaseModel as PydanticBaseModel, parse_obj_as
 from pymongo import IndexModel
 
 from .interfaces import IModel, IModelMeta
-from .connection import BaseConnection
+from .connection import BaseConnection, UndefinedConnection
 from .pyobjectid import PyObjectId
 from .errors import (
     ConnectionMissingError,
@@ -53,16 +53,19 @@ class Model(IModel, BaseModel):
         super().__init_subclass__(**kwargs)
         if not hasattr(cls.Meta, "connection") or cls.Meta.connection is None:
             raise ConnectionMissingError()
-        if isinstance(cls.Meta.connection, BaseConnection) is False:
-            raise ConnectionIncorrectError()
-        if (
-            not hasattr(cls.Meta, "collection_name")
-            or isinstance(cls.Meta.collection_name, str) is False
-        ):
-            raise CollectionNameIncorrect()
+        
+        if isinstance(cls.Meta.connection, UndefinedConnection) is False:
+            
+            if isinstance(cls.Meta.connection, BaseConnection) is False:
+                raise ConnectionIncorrectError()
+            if (
+                not hasattr(cls.Meta, "collection_name")
+                or isinstance(cls.Meta.collection_name, str) is False
+            ):
+                raise CollectionNameIncorrect()
 
-        if hasattr(cls.Meta, "indexes") and cls.Meta.indexes is not None:
-            cls.collection().create_indexes(cls.Meta.indexes)
+            if hasattr(cls.Meta, "indexes") and cls.Meta.indexes is not None:
+                cls.collection().create_indexes(cls.Meta.indexes)
 
     def clean(self):
         pass
