@@ -10,6 +10,7 @@ import ujson
 from pydantic import BaseModel as PydanticBaseModel, parse_obj_as
 
 from pymongo import IndexModel
+from motor.motor_asyncio import AsyncIOMotorCollection
 
 from .interfaces import IModel, IModelMeta
 from .connection import BaseConnection, UndefinedConnection
@@ -117,7 +118,7 @@ class Model(IModel, BaseModel):
         return cls.Meta.connection.database[cls.Meta.collection_name]
 
     @classmethod
-    def collection_async(cls):
+    def collection_async(cls) -> AsyncIOMotorCollection:
         return cls.Meta.connection.database_async.get_collection(
             cls.Meta.collection_name
         )
