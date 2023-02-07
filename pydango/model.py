@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Dict, TypeVar
 
-from functools import cached_property
+from functools import lru_cache, cached_property
 from bson.objectid import ObjectId
 
 import ujson
@@ -54,9 +54,9 @@ class Model(IModel, BaseModel):
         super().__init_subclass__(**kwargs)
         if not hasattr(cls.Meta, "connection") or cls.Meta.connection is None:
             raise ConnectionMissingError()
-        
+
         if isinstance(cls.Meta.connection, UndefinedConnection) is False:
-            
+
             if isinstance(cls.Meta.connection, BaseConnection) is False:
                 raise ConnectionIncorrectError()
             if (
@@ -114,10 +114,12 @@ class Model(IModel, BaseModel):
         return self.dict(exclude={"id": True}, exclude_unset=True)
 
     @classmethod
+    @lru_cache
     def collection(cls):
         return cls.Meta.connection.database[cls.Meta.collection_name]
 
     @classmethod
+    @lru_cache
     def collection_async(cls) -> AsyncIOMotorCollection:
         return cls.Meta.connection.database_async.get_collection(
             cls.Meta.collection_name
@@ -475,24 +477,26 @@ class Model(IModel, BaseModel):
     def dereference_list(cls, value: List[ObjectId], guarantee_order: bool = True):
         if not isinstance(value, list):
             raise DereferenceValueError()
-        
+
         result = cls.query(filter={"_id": {"$in": value}})
-        
-        if not guarantee_order :
+
+        if not guarantee_order:
             return result
-        
+
         return sorted(result, key=lambda x: value.index(x.id))
 
     @classmethod
-    async def dereference_list_async(cls, value: List[ObjectId], guarantee_order: bool = True):
+    async def dereference_list_async(
+        cls, value: List[ObjectId], guarantee_order: bool = True
+    ):
         if not isinstance(value, list):
             raise DereferenceValueError()
-        
+
         result = await cls.query_async(filter={"_id": {"$in": value}})
 
-        if not guarantee_order :
+        if not guarantee_order:
             return result
-        
+
         return sorted(result, key=lambda x: value.index(x.id))
 
     @classmethod
