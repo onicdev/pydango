@@ -365,21 +365,19 @@ class Model(IModel, BaseModel):
         limit: int = 0,
         **kwargs,
     ):
-        result = list(
-            await cls.query_raw_async(
-                filter=filter,
-                projection=projection,
-                sort=sort,
-                skip=skip,
-                limit=limit,
-                **kwargs,
-            )
-        )
+        result = await cls.query_raw_async(
+            filter=filter,
+            projection=projection,
+            sort=sort,
+            skip=skip,
+            limit=limit,
+            **kwargs,
+        ).to_list(length=None)
 
         if len(result) == 0:
             return result
 
-        return parse_obj_as(List[cls], list(result))
+        return parse_obj_as(List[cls], result)
 
     @classmethod
     async def query_required_async(
@@ -391,21 +389,19 @@ class Model(IModel, BaseModel):
         limit: int = 0,
         **kwargs,
     ):
-        result = list(
-            await cls.query_raw_async(
-                filter=filter,
-                projection=projection,
-                sort=sort,
-                skip=skip,
-                limit=limit,
-                **kwargs,
-            )
-        )
+        result = await cls.query_raw_async(
+            filter=filter,
+            projection=projection,
+            sort=sort,
+            skip=skip,
+            limit=limit,
+            **kwargs,
+        ).to_list(length=None)
 
         if len(result) == 0:
             raise NoDataError()
 
-        return parse_obj_as(List[cls], list(result))
+        return parse_obj_as(List[cls], result)
 
     @classmethod
     def count_async(
