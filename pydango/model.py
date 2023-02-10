@@ -230,6 +230,10 @@ class Model(IModel, BaseModel):
             )
         )
 
+        if len(result) == 0:
+            result: List[cls]
+            return result
+
         return parse_obj_as(List[cls], list(result))
 
     @classmethod
@@ -375,6 +379,7 @@ class Model(IModel, BaseModel):
         ).to_list(length=None)
 
         if len(result) == 0:
+            result: List[cls]
             return result
 
         return parse_obj_as(List[cls], result)
