@@ -42,7 +42,6 @@ class EmbeddedModel(BaseModel):
 
 
 class Model(IModel, BaseModel):
-
     id: PyObjectId = PyObjectId.Field()
 
     class Meta(IModelMeta):
@@ -56,7 +55,6 @@ class Model(IModel, BaseModel):
             raise ConnectionMissingError()
 
         if isinstance(cls.Meta.connection, UndefinedConnection) is False:
-
             if isinstance(cls.Meta.connection, BaseConnection) is False:
                 raise ConnectionIncorrectError()
             if (
@@ -76,7 +74,7 @@ class Model(IModel, BaseModel):
             raise IdEmptyError()
 
         include = {}
-        for (field, value) in kwargs.items():
+        for field, value in kwargs.items():
             self.__setattr__(field, value)
             include[field] = True
 
@@ -230,11 +228,7 @@ class Model(IModel, BaseModel):
             )
         )
 
-        if len(result) == 0:
-            result: List[cls]
-            return result
-
-        return parse_obj_as(List[cls], list(result))
+        return parse_obj_as(List[cls], result)
 
     @classmethod
     def query_required(
@@ -378,10 +372,6 @@ class Model(IModel, BaseModel):
             **kwargs,
         ).to_list(length=None)
 
-        if len(result) == 0:
-            result: List[cls]
-            return result
-
         return parse_obj_as(List[cls], result)
 
     @classmethod
@@ -426,7 +416,7 @@ class Model(IModel, BaseModel):
             raise IdEmptyError()
 
         include = {}
-        for (field, value) in kwargs.items():
+        for field, value in kwargs.items():
             self.__setattr__(field, value)
             include[field] = True
 
@@ -513,7 +503,7 @@ class Model(IModel, BaseModel):
             insert_data.append(model.to_mongo())
 
         insert_result = cls.collection().insert_many(insert_data)
-        for (index, model) in enumerate(models):
+        for index, model in enumerate(models):
             model.id = insert_result.inserted_ids[index]
         return models
 
@@ -530,7 +520,7 @@ class Model(IModel, BaseModel):
             insert_data.append(model.to_mongo())
 
         insert_result = await cls.collection_async().insert_many(insert_data)
-        for (index, model) in enumerate(models):
+        for index, model in enumerate(models):
             model.id = insert_result.inserted_ids[index]
         return models
 
