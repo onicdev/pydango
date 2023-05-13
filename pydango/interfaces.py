@@ -213,3 +213,7 @@ class IModel:
         **kwargs,
     ) -> int:
         raise NotImplementedError
+
+    @classmethod
+    def create_indexes(cls):
+        raise NotImplementedError

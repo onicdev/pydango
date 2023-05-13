@@ -16,12 +16,14 @@ from .interfaces import IModel, IModelMeta
 from .connection import BaseConnection, UndefinedConnection
 from .pyobjectid import PyObjectId
 from .errors import (
+    MetaClassMissingError,
     ConnectionMissingError,
     ConnectionIncorrectError,
     CollectionNameIncorrect,
     NoDataError,
     IdEmptyError,
     DereferenceValueError,
+    NoIndexesError,
 )
 
 
@@ -51,6 +53,10 @@ class Model(IModel, BaseModel):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+
+        if not hasattr(cls, "Meta"):
+            raise MetaClassMissingError()
+
         if not hasattr(cls.Meta, "connection") or cls.Meta.connection is None:
             raise ConnectionMissingError()
 
@@ -62,9 +68,6 @@ class Model(IModel, BaseModel):
                 or isinstance(cls.Meta.collection_name, str) is False
             ):
                 raise CollectionNameIncorrect()
-
-            if hasattr(cls.Meta, "indexes") and cls.Meta.indexes is not None:
-                cls.collection().create_indexes(cls.Meta.indexes)
 
     def clean(self):
         pass
@@ -523,6 +526,13 @@ class Model(IModel, BaseModel):
         for index, model in enumerate(models):
             model.id = insert_result.inserted_ids[index]
         return models
+
+    @classmethod
+    def create_indexes(cls):
+        if hasattr(cls.Meta, "indexes") and cls.Meta.indexes is not None:
+            cls.collection().create_indexes(cls.Meta.indexes)
+        else:
+            raise NoIndexesError()
 
 
 T = TypeVar("T", bound=Model)

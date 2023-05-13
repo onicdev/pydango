@@ -31,6 +31,11 @@ class UniValueError(ErrorMixin, ValueError):
     pass
 
 
+class MetaClassMissingError(UniValueError):
+    code = "meta.missing"
+    msg_template = "meta class is missing"
+
+
 class ConnectionMissingError(UniValueError):
     code = "connection.missing"
     msg_template = "connection is missing"
@@ -64,3 +69,8 @@ class IdEmptyError(UniValueError):
 class DereferenceValueError(UniTypeError):
     code = "model.dereference"
     msg_template = "wrong type of dereference value"
+
+
+class NoIndexesError(UniValueError):
+    code = "model.no_indexes"
+    msg_template = "no indexes"
