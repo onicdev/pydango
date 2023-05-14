@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List, Dict, TypeVar
 
+import asyncio
 from functools import lru_cache, cached_property
 from bson.objectid import ObjectId
 
@@ -120,9 +121,13 @@ class Model(IModel, BaseModel):
         return cls.Meta.connection.database[cls.Meta.collection_name]
 
     @classmethod
-    @lru_cache
     def collection_async(cls) -> AsyncIOMotorCollection:
-        return cls.Meta.connection.database_async.get_collection(
+        return cls.get_collection_async(asyncio.get_running_loop())
+
+    @classmethod
+    @lru_cache
+    def get_collection_async(cls, event_loop=None) -> AsyncIOMotorCollection:
+        return cls.Meta.connection.database_async(event_loop).get_collection(
             cls.Meta.collection_name
         )
 

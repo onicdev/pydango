@@ -1,4 +1,4 @@
-from functools import cached_property
+from functools import lru_cache, cached_property
 
 import pymongo
 import motor.motor_asyncio
@@ -30,9 +30,9 @@ class BaseConnection:
     ):
         return self.create_connection()[self.database_name]
 
-    @cached_property
+    @lru_cache
     def database_async(
-        self,
+        self, event_loop=None  # pylint: disable=unused-argument
     ) -> motor.motor_asyncio.AsyncIOMotorDatabase:
         connection = self.create_connection_async()
         return connection.get_database(self.database_name)
