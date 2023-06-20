@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydango"
-version = "1.0.0"
+version = "1.0.1"
 description = "A minimalistic ODM for MongoDB based on Pydantic."
 authors = ["Vitaliy Grusha <vit.grusha@gmail.com>"]
 readme = "README.md"

@@ -61,6 +61,11 @@ class DereferenceValueError(UniTypeError):
     msg_template = "wrong type of dereference value"
 
 
+class DereferencError(UniTypeError):
+    code = "model.dereference"
+    msg_template = "document not found "
+
+
 class NoIndexesError(UniValueError):
     code = "model.no_indexes"
     msg_template = "no indexes"

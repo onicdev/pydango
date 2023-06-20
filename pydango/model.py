@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypeVar
+from typing import TypeVar, Optional
 
 import asyncio
 from functools import lru_cache, cached_property
@@ -23,6 +23,7 @@ from .errors import (
     ConnectionIncorrectError,
     CollectionNameIncorrect,
     DereferenceValueError,
+    DereferencError,
     NoIndexesError,
 )
 
@@ -327,7 +328,7 @@ class Model(IModel, BaseModel):
             **kwargs,
         )
 
-        return parse_obj_as(cls, result)
+        return parse_obj_as(Optional[cls], result)
 
     @classmethod
     async def find_one_async(
@@ -344,7 +345,7 @@ class Model(IModel, BaseModel):
             **kwargs,
         )
 
-        return parse_obj_as(cls, result)
+        return parse_obj_as(Optional[cls], result)
 
     @classmethod
     def find_one_and_delete(
@@ -535,14 +536,24 @@ class Model(IModel, BaseModel):
         if not isinstance(value, ObjectId):
             raise DereferenceValueError()
 
-        return cls.find_one(filter={"_id": value})
+        result = cls.find_one(filter={"_id": value})
+
+        if result is None:
+            raise DereferencError()
+
+        return result
 
     @classmethod
     async def dereference_async(cls, value: ObjectId):
         if not isinstance(value, ObjectId):
             raise DereferenceValueError()
+        
+        result = await cls.find_one_async(filter={"_id": value})
+        
+        if result is None:
+            raise DereferencError()
 
-        return await cls.find_one_async(filter={"_id": value})
+        return result
 
     @classmethod
     def dereference_list(cls, value: list[ObjectId], guarantee_order: bool = True):

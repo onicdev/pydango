@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Optional
 from bson.objectid import ObjectId
 from pymongo import IndexModel
 from pymongo.results import UpdateResult, DeleteResult
