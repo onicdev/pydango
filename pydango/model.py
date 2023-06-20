@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, TypeVar
+from typing import TypeVar
 
 import asyncio
 from functools import lru_cache, cached_property
@@ -11,6 +11,7 @@ import ujson
 from pydantic import BaseModel as PydanticBaseModel, parse_obj_as
 
 from pymongo import IndexModel
+from pymongo.results import UpdateResult, DeleteResult
 from motor.motor_asyncio import AsyncIOMotorCollection
 
 from .interfaces import IModel, IModelMeta
@@ -21,8 +22,6 @@ from .errors import (
     ConnectionMissingError,
     ConnectionIncorrectError,
     CollectionNameIncorrect,
-    NoDataError,
-    IdEmptyError,
     DereferenceValueError,
     NoIndexesError,
 )
@@ -50,7 +49,7 @@ class Model(IModel, BaseModel):
     class Meta(IModelMeta):
         connection: BaseConnection = None
         collection_name: str = None
-        indexes: List[IndexModel] = None
+        indexes: list[IndexModel] = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -70,49 +69,7 @@ class Model(IModel, BaseModel):
             ):
                 raise CollectionNameIncorrect()
 
-    def clean(self):
-        pass
-
-    def update(self, __clean__: bool = True, **kwargs):
-        if self.id is None:
-            raise IdEmptyError()
-
-        include = {}
-        for field, value in kwargs.items():
-            self.__setattr__(field, value)
-            include[field] = True
-
-        if __clean__:
-            self.clean()
-
-        self.collection().update_one(
-            {"_id": self.id}, {"$set": self.dict(include=include)}
-        )
-        return self
-
-    def refresh(self):
-        fresh = self.query_single_required(filter={"_id": self.id})
-        for field in self.__fields__:
-            if field == "id":
-                continue
-            self.__setattr__(field, fresh.__getattribute__(field))
-
-    def save(self, clean: bool = True):
-        if clean:
-            self.clean()
-
-        if self.id is None:
-            insert_result = self.collection().insert_one(self.to_mongo())
-            self.id = insert_result.inserted_id  # pylint: disable=invalid-name
-        else:
-            self.collection().replace_one({"_id": self.id}, self.to_mongo())
-        return self
-
-    def delete(self):
-        self.collection().delete_one({"_id": self.id})
-        self.id = None
-
-    def to_mongo(self) -> Dict:
+    def to_mongo(self) -> dict:
         return self.dict(exclude={"id": True}, exclude_unset=True)
 
     @classmethod
@@ -132,101 +89,193 @@ class Model(IModel, BaseModel):
         )
 
     @classmethod
-    def query_single_raw(
+    def insert_one(cls, model: T, **kwargs):
+        if not isinstance(model, cls):
+            raise ValueError()
+
+        insert_result = cls.collection().insert_one(
+            model.to_mongo(),
+            **kwargs,
+        )
+        model.id = insert_result.inserted_id
+        return model
+
+    @classmethod
+    async def insert_one_async(
         cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
+        model: T,
         **kwargs,
     ):
-        return cls.collection().find_one(
+        if not isinstance(model, cls):
+            raise ValueError()
+
+        insert_result = await cls.collection_async().insert_one(
+            model.to_mongo(),
+            **kwargs,
+        )
+        model.id = insert_result.inserted_id
+        return model
+
+    @classmethod
+    def insert_many(cls, models: list[T], **kwargs):
+        insert_data: dict = []
+        for model in models:
+            if not isinstance(model, cls):
+                raise ValueError()
+
+            insert_data.append(model.to_mongo())
+
+        insert_result = cls.collection().insert_many(insert_data, **kwargs)
+        for index, model in enumerate(models):
+            model.id = insert_result.inserted_ids[index]
+        return models
+
+    @classmethod
+    async def insert_many_async(cls, models: list[T], **kwargs):
+        insert_data: dict = []
+        for model in models:
+            if not isinstance(model, cls):
+                raise ValueError()
+
+            insert_data.append(model.to_mongo())
+
+        insert_result = await cls.collection_async().insert_many(insert_data, **kwargs)
+        for index, model in enumerate(models):
+            model.id = insert_result.inserted_ids[index]
+        return models
+
+    @classmethod
+    def replace_one(
+        cls, filter: dict, replacement: T, upsert: bool = False, **kwargs
+    ) -> UpdateResult:
+        if not isinstance(replacement, cls):
+            raise ValueError()
+
+        update_result = cls.collection().replace_one(
             filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
+            replacement=replacement.to_mongo(),
+            upsert=upsert,
             **kwargs,
         )
 
-    @classmethod
-    def query_single(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        result = cls.query_single_raw(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        )
-        if result is None:
-            return None
-
-        return parse_obj_as(cls, result)
+        return update_result
 
     @classmethod
-    def query_single_required(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        result = cls.query_single_raw(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        )
-        if result is None:
-            raise NoDataError()
+    async def replace_one_async(
+        cls, filter: dict, replacement: T, upsert: bool = False, **kwargs
+    ) -> UpdateResult:
+        if not isinstance(replacement, cls):
+            raise ValueError()
 
-        return parse_obj_as(cls, result)
-
-    @classmethod
-    def query_raw(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        return cls.collection().find(
+        update_result = await cls.collection_async().replace_one(
             filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
+            replacement=replacement.to_mongo(),
+            upsert=upsert,
             **kwargs,
         )
 
+        return update_result
+
     @classmethod
-    def query(
+    def update_one(
+        cls, filter: dict, update: dict, upsert: bool = False, **kwargs
+    ) -> UpdateResult:
+        update_result = cls.collection().update_one(
+            filter=filter,
+            update=update,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return update_result
+
+    @classmethod
+    async def update_one_async(
+        cls, filter: dict, update: dict, upsert: bool = False, **kwargs
+    ) -> UpdateResult:
+        update_result = await cls.collection_async().update_one(
+            filter=filter,
+            update=update,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return update_result
+
+    @classmethod
+    def update_many(
+        cls, filter: dict, update: dict, upsert: bool = False, **kwargs
+    ) -> UpdateResult:
+        update_result = cls.collection().update_many(
+            filter=filter,
+            update=update,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return update_result
+
+    @classmethod
+    async def update_many_async(
+        cls, filter: dict, update: dict, upsert: bool = False, **kwargs
+    ) -> UpdateResult:
+        update_result = await cls.collection_async().update_many(
+            filter=filter,
+            update=update,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return update_result
+
+    @classmethod
+    def delete_one(cls, filter: dict, **kwargs) -> DeleteResult:
+        delete_result = cls.collection().delete_one(
+            filter=filter,
+            **kwargs,
+        )
+
+        return delete_result
+
+    @classmethod
+    async def delete_one_async(cls, filter: dict, **kwargs) -> DeleteResult:
+        delete_result = await cls.collection_async().delete_one(
+            filter=filter,
+            **kwargs,
+        )
+
+        return delete_result
+
+    @classmethod
+    def delete_many(cls, filter: dict, **kwargs) -> DeleteResult:
+        delete_result = cls.collection().delete_many(
+            filter=filter,
+            **kwargs,
+        )
+
+        return delete_result
+
+    @classmethod
+    async def delete_many_async(cls, filter: dict, **kwargs) -> DeleteResult:
+        delete_result = await cls.collection_async().delete_many(
+            filter=filter,
+            **kwargs,
+        )
+
+        return delete_result
+
+    @classmethod
+    def find(
         cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
+        filter: dict = None,
+        projection: dict = None,
         skip: int = 0,
         limit: int = 0,
+        sort: list = None,
         **kwargs,
     ):
         result = list(
-            cls.query_raw(
+            cls.collection().find(
                 filter=filter,
                 projection=projection,
                 sort=sort,
@@ -236,20 +285,21 @@ class Model(IModel, BaseModel):
             )
         )
 
-        return parse_obj_as(List[cls], result)
+        return parse_obj_as(list[cls], result)
 
     @classmethod
-    def query_required(
+    async def find_async(
         cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
+        filter: dict = None,
+        projection: dict = None,
         skip: int = 0,
         limit: int = 0,
+        sort: list = None,
         **kwargs,
     ):
-        result = list(
-            cls.query_raw(
+        result = await (
+            cls.collection_async()
+            .find(
                 filter=filter,
                 projection=projection,
                 sort=sort,
@@ -257,227 +307,249 @@ class Model(IModel, BaseModel):
                 limit=limit,
                 **kwargs,
             )
+            .to_list(length=None)
         )
 
-        if len(result) == 0:
-            raise NoDataError()
-
-        return parse_obj_as(List[cls], list(result))
+        return parse_obj_as(list[cls], result)
 
     @classmethod
-    def count(
+    def find_one(
         cls,
-        filter: Dict = None,
+        filter: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        **kwargs,
+    ):
+        result = cls.collection().find_one(
+            filter=filter,
+            projection=projection,
+            sort=sort,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    async def find_one_async(
+        cls,
+        filter: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        **kwargs,
+    ):
+        result = await cls.collection_async().find_one(
+            filter=filter,
+            projection=projection,
+            sort=sort,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    def find_one_and_delete(
+        cls,
+        filter: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        **kwargs,
+    ):
+        result = cls.collection().find_one_and_delete(
+            filter=filter,
+            projection=projection,
+            sort=sort,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    async def find_one_and_delete_async(
+        cls,
+        filter: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        **kwargs,
+    ):
+        result = await cls.collection_async().find_one_and_delete(
+            filter=filter,
+            projection=projection,
+            sort=sort,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    def find_one_and_replace(
+        cls,
+        filter: dict = None,
+        replacement: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        upsert: bool = False,
+        **kwargs,
+    ):
+        result = cls.collection().find_one_and_replace(
+            filter=filter,
+            replacement=replacement,
+            projection=projection,
+            sort=sort,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    async def find_one_and_replace_async(
+        cls,
+        filter: dict = None,
+        replacement: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        upsert: bool = False,
+        **kwargs,
+    ):
+        result = await cls.collection_async().find_one_and_replace(
+            filter=filter,
+            replacement=replacement,
+            projection=projection,
+            sort=sort,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    def find_one_and_update(
+        cls,
+        filter: dict = None,
+        update: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        upsert: bool = False,
+        **kwargs,
+    ):
+        result = cls.collection().find_one_and_update(
+            filter=filter,
+            update=update,
+            projection=projection,
+            sort=sort,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    async def find_one_and_update_async(
+        cls,
+        filter: dict = None,
+        update: dict = None,
+        projection: dict = None,
+        sort: list = None,
+        upsert: bool = False,
+        **kwargs,
+    ):
+        result = await cls.collection_async().find_one_and_update(
+            filter=filter,
+            update=update,
+            projection=projection,
+            sort=sort,
+            upsert=upsert,
+            **kwargs,
+        )
+
+        return parse_obj_as(cls, result)
+
+    @classmethod
+    def count_documents(
+        cls,
+        filter: dict = None,
         **kwargs,
     ) -> int:
-        if filter is None:
-            filter = {}
         return cls.collection().count_documents(
             filter=filter,
             **kwargs,
         )
 
     @classmethod
-    def query_single_raw_async(
+    async def count_documents_async(
         cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        return cls.collection_async().find_one(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        )
-
-    @classmethod
-    async def query_single_async(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        result = await cls.query_single_raw_async(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        )
-        if result is None:
-            return None
-
-        return parse_obj_as(cls, result)
-
-    @classmethod
-    async def query_single_required_async(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        result = await cls.query_single_raw_async(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        )
-        if result is None:
-            raise NoDataError()
-
-        return parse_obj_as(cls, result)
-
-    @classmethod
-    def query_raw_async(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        return cls.collection_async().find(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        )
-
-    @classmethod
-    async def query_async(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        result = await cls.query_raw_async(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        ).to_list(length=None)
-
-        return parse_obj_as(List[cls], result)
-
-    @classmethod
-    async def query_required_async(
-        cls,
-        filter: Dict = None,
-        projection: Dict = None,
-        sort: List = None,
-        skip: int = 0,
-        limit: int = 0,
-        **kwargs,
-    ):
-        result = await cls.query_raw_async(
-            filter=filter,
-            projection=projection,
-            sort=sort,
-            skip=skip,
-            limit=limit,
-            **kwargs,
-        ).to_list(length=None)
-
-        if len(result) == 0:
-            raise NoDataError()
-
-        return parse_obj_as(List[cls], result)
-
-    @classmethod
-    def count_async(
-        cls,
-        filter: Dict = None,
+        filter: dict = None,
         **kwargs,
     ) -> int:
-        if filter is None:
-            filter = {}
-        return cls.collection_async().count_documents(
+        return await cls.collection_async().count_documents(
             filter=filter,
             **kwargs,
         )
 
-    async def update_async(self, __clean__: bool = True, **kwargs):
-        if self.id is None:
-            raise IdEmptyError()
-
-        include = {}
-        for field, value in kwargs.items():
-            self.__setattr__(field, value)
-            include[field] = True
-
-        if __clean__:
-            self.clean()
-
-        await self.collection_async().update_one(
-            {"_id": self.id}, {"$set": self.dict(include=include)}
+    @classmethod
+    def estimated_document_count(
+        cls,
+        **kwargs,
+    ):
+        return cls.collection().estimated_document_count(
+            **kwargs,
         )
-        return self
 
-    async def refresh_async(self):
-        fresh = await self.query_single_required_async(filter={"_id": self.id})
-        for field in self.__fields__:
-            if field == "id":
-                continue
-            self.__setattr__(field, fresh.__getattribute__(field))
+    @classmethod
+    async def estimated_document_count_async(
+        cls,
+        **kwargs,
+    ):
+        return await cls.collection_async().estimated_document_count(
+            **kwargs,
+        )
 
-    async def save_async(self, clean: bool = True):
-        if clean:
-            self.clean()
+    @classmethod
+    def distinct(
+        cls,
+        key: str,
+        filter: dict = None,
+        **kwargs,
+    ) -> list:
+        return cls.collection().distinct(
+            key=key,
+            filter=filter,
+            **kwargs,
+        )
 
-        if self.id is None:
-            insert_result = await self.collection_async().insert_one(self.to_mongo())
-            self.id = insert_result.inserted_id
-        else:
-            await self.collection_async().replace_one({"_id": self.id}, self.to_mongo())
-        return self
-
-    async def delete_async(self):
-        await self.collection_async().delete_one({"_id": self.id})
-        self.id = None
+    @classmethod
+    async def distinct_async(
+        cls,
+        key: str,
+        filter: dict = None,
+        **kwargs,
+    ) -> list:
+        return await cls.collection_async().distinct(
+            key=key,
+            filter=filter,
+            **kwargs,
+        )
 
     @classmethod
     def dereference(cls, value: ObjectId):
         if not isinstance(value, ObjectId):
             raise DereferenceValueError()
 
-        return cls.query_single_required(filter={"_id": value})
+        return cls.find_one(filter={"_id": value})
 
     @classmethod
-    def dereference_async(cls, value: ObjectId):
+    async def dereference_async(cls, value: ObjectId):
         if not isinstance(value, ObjectId):
             raise DereferenceValueError()
 
-        return cls.query_single_required_async(filter={"_id": value})
+        return await cls.find_one_async(filter={"_id": value})
 
     @classmethod
-    def dereference_list(cls, value: List[ObjectId], guarantee_order: bool = True):
+    def dereference_list(cls, value: list[ObjectId], guarantee_order: bool = True):
         if not isinstance(value, list):
             raise DereferenceValueError()
 
-        result = cls.query(filter={"_id": {"$in": value}})
+        result = cls.find(filter={"_id": {"$in": value}})
 
         if not guarantee_order:
             return result
@@ -486,12 +558,12 @@ class Model(IModel, BaseModel):
 
     @classmethod
     async def dereference_list_async(
-        cls, value: List[ObjectId], guarantee_order: bool = True
+        cls, value: list[ObjectId], guarantee_order: bool = True
     ):
         if not isinstance(value, list):
             raise DereferenceValueError()
 
-        result = await cls.query_async(filter={"_id": {"$in": value}})
+        result = await cls.find_async(filter={"_id": {"$in": value}})
 
         if not guarantee_order:
             return result
@@ -499,43 +571,22 @@ class Model(IModel, BaseModel):
         return sorted(result, key=lambda x: value.index(x.id))
 
     @classmethod
-    def insert_list(cls, models: List[T]):
-        if len(models) == 0:
-            return []
-
-        insert_data: Dict = []
-        for model in models:
-            if not isinstance(model, cls):
-                raise ValueError()
-
-            insert_data.append(model.to_mongo())
-
-        insert_result = cls.collection().insert_many(insert_data)
-        for index, model in enumerate(models):
-            model.id = insert_result.inserted_ids[index]
-        return models
-
-    @classmethod
-    async def insert_list_async(cls, models: List[T]):
-        if len(models) == 0:
-            return []
-
-        insert_data: Dict = []
-        for model in models:
-            if not isinstance(model, cls):
-                raise ValueError()
-
-            insert_data.append(model.to_mongo())
-
-        insert_result = await cls.collection_async().insert_many(insert_data)
-        for index, model in enumerate(models):
-            model.id = insert_result.inserted_ids[index]
-        return models
-
-    @classmethod
-    def create_indexes(cls):
+    def create_indexes(cls, **kwargs):
         if hasattr(cls.Meta, "indexes") and cls.Meta.indexes is not None:
-            cls.collection().create_indexes(cls.Meta.indexes)
+            cls.collection().create_indexes(
+                cls.Meta.indexes,
+                **kwargs,
+            )
+        else:
+            raise NoIndexesError()
+
+    @classmethod
+    async def create_indexes_async(cls, **kwargs):
+        if hasattr(cls.Meta, "indexes") and cls.Meta.indexes is not None:
+            await cls.collection_async().create_indexes(
+                cls.Meta.indexes,
+                **kwargs,
+            )
         else:
             raise NoIndexesError()
 

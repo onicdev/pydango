@@ -56,16 +56,6 @@ class CollectionNameIncorrect(UniValueError):
     msg_template = "collection name is incorrect or missing"
 
 
-class NoDataError(UniValueError):
-    code = "query.no_data"
-    msg_template = "required query response is empty"
-
-
-class IdEmptyError(UniValueError):
-    code = "model.id_empty"
-    msg_template = "id is empty"
-
-
 class DereferenceValueError(UniTypeError):
     code = "model.dereference"
     msg_template = "wrong type of dereference value"
